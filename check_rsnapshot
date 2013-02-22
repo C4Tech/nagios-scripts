@@ -1,0 +1,116 @@
+#!/bin/bash
+# Version 1.0
+# ok= 0, Warning = 1, Critical = 2 unknown = 3
+
+HOST="$1"
+SNAPDIR="/srv/rsnapshot/$HOST"
+BACKTEST="daily.0"
+CONFFILE="/etc/rsnapshot.d/$HOST.conf"
+LOGFILE="/var/log/rsnapshot/$HOST.log"
+STATUS="3"
+CONF_CHECK=0
+CONF_TXT=""
+ROTATE_CHECK=0
+ROTATE_TXT=""
+DEBUG=1
+LOGERR=""
+LOGWARN=""
+
+
+if [ "$HOST" = "" ]; then
+        echo "ERROR: Command needs a host passed to it"
+        exit 2
+fi
+
+date2stamp() {
+        date --utc --date "$1" +%s
+}
+
+stamp2date() {
+        date --utc --date "1970-01-01 $1 sec" "+%Y-%m-%d %T"
+}
+
+
+dateDiff() {
+        case $1 in
+                -s)     sec=1; shift;;
+                -m)     sec=60; shift;;
+                -h)     sec=3600; shift;;
+                -d)     sec=86400; shift;;
+                *)      sec=86400;;
+        esac
+        dte1=$(date2stamp $1)
+        dte2=$(date2stamp $2)
+        diffSec=$((dte2-dte1))
+        if ((diffSec < 0)); then abs=3; else abs=1; fi
+        echo $((diffSec/sec*abs))
+}
+
+FILEDAY=`date -r $SNAPDIR/$BACKTEST +%d/%b/%Y`
+FILEDATE=`date -r $SNAPDIR/$BACKTEST +%F`
+
+# Function
+function check_conf {
+        if [ ! -f /var/run/rsnapshot.pid ]; then
+                TEST=`rsnapshot -c $CONFFILE -t daily 2>&1 | grep "ERROR"`
+                if [ "$TEST" != "" ]; then
+                        CONF_TXT=$TEST
+                        CONF_CHECK=1
+                fi
+        fi
+}
+
+function check_rotation {
+        TIMEDIFF=$(dateDiff -d $FILEDATE $date)
+        if [ "$TIMEDIFF" -gt "1" ]; then
+                ROTATE_CHECK=1
+                ROTATE_TXT="Backup was not rotated in the last 24 hours. Date on $BACKTEST is $FILEDATE"
+        fi
+}
+
+function check_log {
+        LOGDATA="$(egrep ^\\[`date +%d/%b/%Y` $LOGFILE)"
+        LOGERR="$(echo "$LOGDATA" | egrep -i 'error:')"
+        LOGWARN="$(echo "$LOGDATA" | egrep -i 'warning:'| egrep -v 'but with some warnings')"
+}
+
+
+RETSTR=""
+RETVAL=0
+error_to() {
+        if [ "$1" -gt "$RETVAL" ]; then
+                RETVAL="$1"
+        fi
+        RETSTR="$RETSTR
+        $2"
+}
+
+function finisher {
+        if [ "$CONF_CHECK" -gt "0" ]; then
+                if [ $DEBUG ]; then echo Check Conf; fi
+                error_to 2 "ERROR: The conf file has errors. $CONF_TXT"
+        fi
+
+        if [ "${#LOGERR}" -gt "0" ]; then
+                error_to 2 "$LOGERR"
+        fi
+
+        if [ "${#LOGWARN}" -gt "0" ]; then
+                error_to 1 "$LOGWARN"
+        fi
+        if [ "$ROTATE_CHECK" -gt "0" ]; then
+                if [ $DEBUG ]; then echo Check Rotate; fi
+                error_to 2 "$ROTATE_TXT"
+        fi
+        if [ "$RETSTR" == "" ]; then
+                RETSTR="OK - No errors reported"
+        fi
+        echo $RETSTR
+        exit $RETVAL
+}
+
+
+check_conf
+check_rotation
+check_log
+finisher
