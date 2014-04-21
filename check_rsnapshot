@@ -7,9 +7,12 @@ SNAPDIR="/srv/rsnapshot/$HOST"
 BACKTEST="daily.0"
 CONFFILE="/etc/rsnapshot.d/$HOST.conf"
 LOGFILE="/var/log/rsnapshot/$HOST.log"
+PID="/var/run/rsnapshot/rsnapshot-$HOST.pid"
 STATUS="3"
 CONF_CHECK=0
 CONF_TXT=""
+DIR_CHECK=0
+DIR_TXT=""
 ROTATE_CHECK=0
 ROTATE_TXT=""
 DEBUG=1
@@ -46,10 +49,18 @@ dateDiff() {
         echo $((diffSec/sec*abs))
 }
 
-FILEDAY=`date -r $SNAPDIR/$BACKTEST +%d/%b/%Y`
-FILEDATE=`date -r $SNAPDIR/$BACKTEST +%F`
+if [ -f $SNAPDIR/$BACKTEST ]; then FILEDATE=`date -r $SNAPDIR/$BACKTEST +%F`; fi
+
 
 # Function
+function check_dir {
+        if [ ! -d "$SNAPDIR" ]; then
+                DIR_CHECK=1
+                DIR_TXT="$SNAPDIR is missing"
+        fi
+}
+
+
 function check_conf {
         if [ ! -f /var/run/rsnapshot.pid ]; then
                 TEST=`rsnapshot -c $CONFFILE -t daily 2>&1 | grep "ERROR"`
@@ -69,9 +80,13 @@ function check_rotation {
 }
 
 function check_log {
-        LOGDATA="$(egrep ^\\[`date +%d/%b/%Y` $LOGFILE)"
-        LOGERR="$(echo "$LOGDATA" | egrep -i 'error:')"
-        LOGWARN="$(echo "$LOGDATA" | egrep -i 'warning:'| egrep -v 'but with some warnings')"
+        if [ -f $LOGFILE]; then
+          LOGDATA="$(egrep ^\\[`date +%d/%b/%Y` $LOGFILE)"
+          LOGERR="$(echo "$LOGDATA" | egrep -i 'error:')"
+          LOGWARN="$(echo "$LOGDATA" | egrep -i 'warning:'| egrep -v 'but with some warnings')"
+        else
+          LOGERR="ERROR: Missing log File"
+        fi
 }
 
 
@@ -109,7 +124,7 @@ function finisher {
         exit $RETVAL
 }
 
-
+check_dir
 check_conf
 check_rotation
 check_log
