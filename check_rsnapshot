@@ -80,7 +80,7 @@ function check_rotation {
 }
 
 function check_log {
-        if [ -f $LOGFILE]; then
+        if [ -f $LOGFILE ]; then
           LOGDATA="$(egrep ^\\[`date +%d/%b/%Y` $LOGFILE)"
           LOGERR="$(echo "$LOGDATA" | egrep -i 'error:')"
           LOGWARN="$(echo "$LOGDATA" | egrep -i 'warning:'| egrep -v 'but with some warnings')"
